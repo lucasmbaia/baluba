@@ -1,0 +1,13 @@
+namespace gossip;
+
+table Gossip {
+  Option : string;
+  Body : [byte];
+}
+
+table File {
+  Name : string;
+  Size : long;
+}
+
+root_type Gossip;
