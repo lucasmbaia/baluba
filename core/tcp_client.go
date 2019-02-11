@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	//"net"
+	"net"
 	"os"
-	"strconv"
+	//"strconv"
 	"time"
-	//"github.com/lucasmbaia/baluba/core/serializer"
+	"github.com/lucasmbaia/baluba/core/serializer"
 	//"encoding/json"
 	//"io/ioutil"
 	//"bytes"
@@ -17,6 +17,7 @@ import (
 /****
 Cada block de dados transferido vai conter
 	Version - 4 Bytes
+	Hostname - 4 Bytes
 	Option - 4 bytes
 	File Name - 4 bytes
 	File - 4 bytes
@@ -35,11 +36,13 @@ Cada block de dados transferido vai conter
 
 func UploadFile(name string) error {
 	var (
-		file *os.File
-		err  error
-		n    int
-		//conn net.Conn
-		//client = serializer.NewClientSerializer()
+		file	  *os.File
+		err	  error
+		//n	  int
+		buffer	  = make([]byte, 2048)
+		hostname  string
+		conn net.Conn
+		client = serializer.NewClientSerializer()
 		//scanner	*bufio.Scanner
 		//buf	= make([]byte, 35 * 1024)
 		//n	int
@@ -48,13 +51,24 @@ func UploadFile(name string) error {
 	start := time.Now()
 	fmt.Println("PORRA")
 
-	/*if conn, err = net.Dial("tcp", "192.168.75.129:5522"); err != nil {
+	if conn, err = net.Dial("tcp", "192.168.75.129:5522"); err != nil {
 		return err
-	}*/
+	}
 
-	var option = "file_name"
-	var bytesOption = strconv.FormatInt(int64(len(option)/2), 16)
-	fmt.Println(bytesOption)
+
+	if hostname, err = os.Hostname(); err != nil {
+		return err
+	}
+
+	buffer = append(buffer, ConvertUnsigned4Bytes(1)...)
+	buffer = append(buffer, []byte("1")...)
+	buffer = append(buffer, ConvertUnsigned4Bytes(uint32(len(hostname)))...)
+	buffer = append(buffer, []byte(hostname)...)
+	buffer = append(buffer, ConvertUnsigned4Bytes(uint32(len("file_name")))...)
+	buffer = append(buffer, []byte("file_name")...)
+	buffer = append(buffer, ConvertUnsigned4Bytes(uint32(len(name)))...)
+	buffer = append(buffer, []byte(name)...)
+
 	/*if f, err = json.Marshal(File{
 		Name: name,
 	}); err != nil {
@@ -85,7 +99,7 @@ func UploadFile(name string) error {
 		//var buf = bytes.NewBuffer(make([]byte, 0, 35 * 1024))
 		//var body []byte
 		var buf = make([]byte, 1024)
-		if n, err = r.Read(buf); err != nil {
+		if _, err = r.Read(buf); err != nil {
 			if err == io.EOF {
 				fmt.Println("DEU OEF")
 				break
@@ -96,7 +110,7 @@ func UploadFile(name string) error {
 
 		/*buffer = append(buffer, []byte(bytesOption)...)
 		buffer = append(buffer, buf...)*/
-		//client.Serializer()
+		client.Serializer()
 		/*if body, err = encodeGossip(gossip{
 			Option:	"file",
 			Body:	buf,
@@ -104,9 +118,9 @@ func UploadFile(name string) error {
 			break
 		}*/
 
-		//conn.Write(buf)
+		//conn.Write(append(buffer, append(ConvertUnsigned4Bytes(uint32(n)), buf...)...))
+		conn.Write(buf)
 		buf = nil
-		buffer = nil
 		//body = nil
 	}
 
