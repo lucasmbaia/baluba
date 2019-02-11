@@ -46,7 +46,7 @@ int loadsock() {
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_port = htons(PORT);
 
-	if (inet_pton(AF_INET, "192.168.75.129", &serv_addr.sin_addr) <= 0) {
+	if (inet_pton(AF_INET, "172.16.95.171", &serv_addr.sin_addr) <= 0) {
 		printf("Invalid Address!\n");
 		return -1;
 	}
@@ -91,7 +91,7 @@ char **loadfile(char *filename, int *len, int sock) {
 		if (!result) {
 			break;
 		}
-		send(sock, buf, result, 0);
+		//send(sock, buf, result, 0);
 		readBytes += result;
 		free(buf);
 		//posix_fadvise(f, (readBytes + 1) - result, readBytes, POSIX_FADV_DONTNEED);

@@ -1,15 +1,16 @@
 package core
 
 import (
-	"net"
 	"bufio"
+	"bytes"
 	"context"
-	"log"
+	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"io"
-	"encoding/json"
-	"encoding/gob"
-	"bytes"
+	"log"
+	"net"
+	//"os"
 )
 
 const (
@@ -22,20 +23,20 @@ type connection struct {
 	conn  net.Conn
 }
 
-type gossip struct {
-	Option	string
-	Body	[]byte
-	Error	error
+type gossipOld struct {
+	Option string
+	Body   []byte
+	Error  error
 }
 
 type File struct {
-	Name  string
-	Size  int64
+	Name string
+	Size int64
 }
 
-func decodeGossip(b []byte) (gossip, error) {
+func decodeGossip(b []byte) (gossipOld, error) {
 	var (
-		g   gossip
+		g   gossipOld
 		err error
 	)
 
@@ -43,7 +44,7 @@ func decodeGossip(b []byte) (gossip, error) {
 	return g, err
 }
 
-func encodeGossip(g gossip) ([]byte, error) {
+func encodeGossip(g gossipOld) ([]byte, error) {
 	var (
 		buf bytes.Buffer
 		err error
@@ -85,31 +86,38 @@ func NewServerTcp(ctx context.Context) {
 }
 
 func (c *connection) handleConnection() {
+	//var file *os.File
+
 	defer func() {
 		if addr, ok := c.conn.RemoteAddr().(*net.TCPAddr); ok {
 			log.Printf("Connection Close if node IP %s", addr.IP.String())
 		}
 		c.conn.Close()
+		//file.Close()
 	}()
 
 	var (
-		err	error
-		buffer	= make([]byte, 1024)
-		n	int
-		total	int64
+		err    error
+		buffer = make([]byte, 2048)
+		//n      int
+		//total  int64
 	)
 
-	total = 0
+	/*if file, err = os.Create("/root/Vikings.S05E09.A.Simple.Story.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb.mkv"); err != nil {
+		return
+	}*/
+
+	//total = 0
 
 	for {
-		if n, err = c.read.Read(buffer); err != nil {
+		if _, err = c.read.Read(buffer); err != nil {
 			if err != io.EOF {
 				log.Printf("Error to read bytes: %s\n", err.Error())
 			}
 			return
 		}
 
-		/*var g gossip
+		/*var g gossipOld
 
 		if g, err = decodeGossip(buffer[:n]); err != nil {
 			fmt.Println("DEU MERDA", err)
@@ -124,8 +132,9 @@ func (c *connection) handleConnection() {
 				continue
 			}
 		}*/
-		total += int64(n)
-		fmt.Println(total)
+		//total += int64(n)
+		//fmt.Println(total)
+		//file.Write(buffer[:n])
 		//fmt.Println(g)
 	}
 }
