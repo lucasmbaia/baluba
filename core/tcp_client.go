@@ -10,13 +10,15 @@ import (
 	"github.com/lucasmbaia/baluba/core/serializer"
 	//"github.com/lucasmbaia/baluba/core/serializer/gossip"
 	"time"
+	"path/filepath"
+	"strings"
 	//"internal/poll"
 	//"runtime"
 	//"syscall"
 	//"compress/gzip"
 	//"encoding/json"
-	//"io/ioutil"
 	//"bytes"
+
 )
 
 /****
@@ -40,25 +42,18 @@ Cada block de dados transferido vai conter
 ***/
 
 type Reader struct {
-	//src	io.Reader
-	src	*os.File
-	done 	bool
-	size	int64
-	position	int64
-	client		*serializer.Client
-	//pfd	poll.FD
+	src	  *os.File
+	done	  bool
+	size	  int64
+	position  int64
+	client	  *serializer.Client
 }
 
-func NewReader(src *os.File, fd uintptr, size int64, client *serializer.Client) *Reader {
+func NewReader(src *os.File, size int64, client *serializer.Client) *Reader {
 	return &Reader{
 		src:	src,
 		size:	size,
 		client:	client,
-		/*pfd:	poll.FD{
-			Sysfd:		int(fd),
-			IsStream:	true,
-			ZeroReadIsEOF:	true,
-		},*/
 	}
 }
 
@@ -67,33 +62,197 @@ func (r *Reader) Read(b []byte) (n int, err error) {
 		return 0, io.EOF
 	}
 
-	//var off int64 = 1024
-	//var buffer []byte
-	if r.size - r.position < 1024 {
+	if r.size - r.position < int64(len(b)) {
 		r.done = true
-		//off = r.size - r.position
 	}
 
+	//var buffer = make([]byte, len(b) - len(r.client.SerializerGossip(gossip.GossipObj{Option: "file_name"})))
 	r.src.Seek(r.position, 0)
 	n, err = r.src.Read(b)
 	r.position += int64(n)
 
-	fmt.Println(b)
-	//b = r.client.SerializerGossip(gossip.GossipObj{Option: "file_name", Body: buffer})
+	//copy(b, r.client.SerializerGossip(gossip.GossipObj{Option: "file_name", Body: buffer}))
+	//r.client.DeserializerGossip(b)
+
 	return n, err
-	/*n, err = r.pfd.Read(b)
-	runtime.KeepAlive(r)
-	return n, err*/
+}
 
+func StartClient(directories []Directories) error {
+	var (
+		err	error
+		conn     net.Conn
+	)
 
-	/*if r.done {
-		return 0, io.EOF
+	checkDirectories := func(directories []Directories, path string) (int, bool) {
+		for idx, d := range directories {
+			if d.Path == path {
+				return idx, true
+			}
+		}
+
+		return 0, false
 	}
 
-		p = []byte("pepca")
+	for idx, d := range directories {
+		if _, err = os.Stat(d.Path); os.IsNotExist(err) || err != nil {
+			return err
+		}
 
-	r.done = true
-	return 1, nil*/
+		if len(d.Files) > 0 {
+			for _, file := range d.Files {
+				if _, err = os.Stat(fmt.Sprintf("%s/%s", d.Path, file.Name)); os.IsNotExist(err) || err != nil {
+					return err
+				}
+			}
+		} else {
+			if err = filepath.Walk(d.Path, func(path string, info os.FileInfo, e error) error {
+				var (
+					file	string
+					index	int
+					exists	bool
+					dir	[]string
+				)
+
+
+				if info.IsDir() {
+					if _, exists = checkDirectories(directories, path); !exists {
+						directories = append(directories, Directories{
+							Path:	path,
+						})
+					}
+
+					return nil
+				}
+
+				file = strings.Replace(path, fmt.Sprintf("%s/", d.Path), "", 1)
+				if len(strings.Split(file, "/")) == 1 && !info.IsDir() {
+					directories[idx].Files = append(directories[idx].Files, Files{Name: file})
+				} else {
+					dir = strings.Split(path, "/")
+
+					if index, exists = checkDirectories(directories, strings.Join(dir[:len(dir) -1], "/")); exists {
+						directories[index].Files = append(directories[index].Files, Files{Name: dir[len(dir)-1]})
+					} else {
+						directories = append(directories, Directories{
+							Path:	strings.Join(dir[:len(dir) -1], "/"),
+							Files:	[]Files{{Name: dir[len(dir)-1]}},
+						})
+					}
+				}
+
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+	}
+
+	if conn, err = net.Dial("tcp", "172.16.95.171:5522"); err != nil {
+		return err
+	}
+
+	for _, d := range directories {
+		for _, f := range d.Files {
+			//if err = FastUploadFile(fmt.Sprintf("%s/%s", d.Path, f.Name), conn); err != nil {
+			if err = UploadFileBuffering(fmt.Sprintf("%s/%s", d.Path, f.Name), conn); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func FastUploadFile(name string, conn net.Conn) error {
+	var (
+		err	error
+		file	*os.File
+		stat	os.FileInfo
+		r	*Reader
+		w	*bufio.Writer
+		client	= serializer.NewClientSerializer()
+		written	int64
+	)
+
+	if file, err = os.OpenFile(name, os.O_RDONLY, os.ModePerm); err != nil {
+		return err
+	}
+	defer file.Close()
+
+	if stat, err = file.Stat(); err != nil {
+		return err
+	}
+
+	r = NewReader(file, stat.Size(), client)
+	w = bufio.NewWriter(conn)
+
+	if written, err = io.CopyN(w, r, stat.Size()); err != nil {
+		return err
+	}
+
+	fmt.Println(stat.Size())
+	fmt.Println(written)
+
+	return nil
+}
+
+func UploadFileBuffering(name string, conn net.Conn) error {
+	var (
+		buffer	  []byte
+		hostname  string
+		err	  error
+		r	  *bufio.Reader
+		client	  = serializer.NewClientSerializer()
+		n	  int
+		file	  *os.File
+	)
+
+	if hostname, err = os.Hostname(); err != nil {
+		return err
+	}
+
+	buffer = createHeader("transfer", hostname, name)
+	fmt.Println(buffer)
+	fmt.Println(n, client)
+
+	if file, err = os.OpenFile(name, os.O_RDONLY, os.ModePerm); err != nil {
+		return err
+	}
+	defer file.Close()
+
+	r = bufio.NewReader(file)
+
+	for {
+		var buf = make([]byte, 32768)
+		if _, err = r.Read(buf); err != nil {
+			if err == io.EOF {
+				break
+			}
+		}
+
+		//conn.Write(append(buffer, append(ConvertUnsigned4Bytes(uint32(n)), buf...)...))
+		//fmt.Println(conn.Write(client.SerializerGossip(gossip.GossipObj{Option: "transfer", Body: buf})))
+		fmt.Println(conn.Write(buf))
+
+		time.Sleep(2 * time.Second)
+	}
+
+	return nil
+}
+
+func createHeader(option, hostname, file string) []byte {
+	var buffer []byte
+
+	buffer = append(buffer, ConvertUnsigned4Bytes(1)...)
+	buffer = append(buffer, []byte("1")...)
+	buffer = append(buffer, ConvertUnsigned4Bytes(uint32(len(hostname)))...)
+	buffer = append(buffer, []byte(hostname)...)
+	buffer = append(buffer, ConvertUnsigned4Bytes(uint32(len(option)))...)
+	buffer = append(buffer, []byte(option)...)
+	buffer = append(buffer, ConvertUnsigned4Bytes(uint32(len(file)))...)
+	buffer = append(buffer, []byte(file)...)
+
+	return buffer
 }
 
 func UploadFile(name string) error {
@@ -175,7 +334,7 @@ func UploadFile(name string) error {
 
 	//r := bufio.NewReader(file)
 	stat, _ := file.Stat()
-	r := NewReader(file, file.Fd(), stat.Size(), client)
+	r := NewReader(file, stat.Size(), client)
 	bw := bufio.NewWriter(conn)
 
 

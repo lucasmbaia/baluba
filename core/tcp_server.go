@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"github.com/lucasmbaia/baluba/core/serializer"
 	//"os"
 )
 
@@ -98,11 +99,13 @@ func (c *connection) handleConnection() {
 
 	var (
 		err    error
-		buffer = make([]byte, 2048)
-		//n      int
+		buffer = make([]byte, 65536)
+		client	= serializer.NewClientSerializer()
+		n      int
 		//total  int64
 	)
 
+	fmt.Println(client)
 	/*if file, err = os.Create("/root/Vikings.S05E09.A.Simple.Story.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb.mkv"); err != nil {
 		return
 	}*/
@@ -110,13 +113,18 @@ func (c *connection) handleConnection() {
 	//total = 0
 
 	for {
-		if _, err = c.read.Read(buffer); err != nil {
+		//if n, err = c.read.Read(buffer); err != nil {
+		if n, err = io.ReadFull(c.read, buffer); err != nil {
 			if err != io.EOF {
 				log.Printf("Error to read bytes: %s\n", err.Error())
 			}
 			return
 		}
 
+		fmt.Println(n)
+		//fmt.Println(c.read.Peek(n))
+		//fmt.Println(c.read.Size())
+		//client.DeserializerGossip(buffer[:n])
 		/*var g gossipOld
 
 		if g, err = decodeGossip(buffer[:n]); err != nil {
