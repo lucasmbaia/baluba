@@ -1,0 +1,1 @@
+cmd_/root/workspace/go/src/github.com/lucasmbaia/baluba/core/c/fs/balubafs.ko := ld -r -m elf_x86_64 -T ./scripts/module-common.lds --build-id  -o /root/workspace/go/src/github.com/lucasmbaia/baluba/core/c/fs/balubafs.ko /root/workspace/go/src/github.com/lucasmbaia/baluba/core/c/fs/balubafs.o /root/workspace/go/src/github.com/lucasmbaia/baluba/core/c/fs/balubafs.mod.o

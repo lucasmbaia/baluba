@@ -6,7 +6,8 @@ import (
 
 func Test_ServerGRPC(t *testing.T) {
 	s, err := NewServerGRPC(ServerGRPCConfig{
-		Port: 5522,
+		Port:	  5522,
+		RootPath: "/root",
 	})
 	if err != nil {
 		t.Fatal(err)
