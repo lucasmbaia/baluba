@@ -6,7 +6,7 @@ import (
 	//"strings"
 	//"path/filepath"
 	"fmt"
-	//"sync"
+	"sync"
 
 	"github.com/lucasmbaia/baluba/proto"
 	"github.com/pkg/errors"
@@ -17,12 +17,23 @@ import (
 	_ "google.golang.org/grpc/encoding/gzip"
 )
 
+const (
+	defaultMaxConcurrency = 5000
+)
+
 type ClientGRPC struct {
+	sync.RWMutex
+
 	conn	    *grpc.ClientConn
 	client	    baluba.BalubaServiceClient
 	chunkSize   int
 	//files	    map[string]*files
 	concurrency int
+	retry	    map[string]int
+	maxRetry    int
+	wait	    chan bool
+	done	    chan bool
+	cc	    chan struct{}
 }
 
 type ClientGRPCConfig struct {
@@ -30,6 +41,7 @@ type ClientGRPCConfig struct {
 	ChunkSize	int
 	Compress	bool
 	MaxConcurrency	int
+	MaxRetry	int
 }
 
 func NewClientGRPC(cfg ClientGRPCConfig) (ClientGRPC, error) {
@@ -56,6 +68,17 @@ func NewClientGRPC(cfg ClientGRPCConfig) (ClientGRPC, error) {
 
 	client.client = baluba.NewBalubaServiceClient(client.conn)
 	client.concurrency = cfg.MaxConcurrency
+	client.retry = make(map[string]int)
+	client.maxRetry = cfg.MaxRetry
+	client.wait = make(chan bool)
+	client.done = make(chan bool)
+
+	if cfg.MaxConcurrency > 0 && cfg.MaxConcurrency < defaultMaxConcurrency {
+		client.cc = make(chan struct{}, cfg.MaxConcurrency)
+	} else {
+		client.concurrency = defaultMaxConcurrency
+		client.cc = make(chan struct{}, defaultMaxConcurrency)
+	}
 
 	return client, nil
 }
@@ -64,6 +87,10 @@ func (c *ClientGRPC) Upload(ctx context.Context, dt []DirectoriesTemplate) (s St
 	var (
 		directories []Directories
 		hostname    string
+		resp	    = make(chan response)
+		wg	    sync.WaitGroup
+		totalFiles  = 0
+		ok	    bool
 	)
 
 	if hostname, err = os.Hostname(); err != nil {
@@ -83,10 +110,65 @@ func (c *ClientGRPC) Upload(ctx context.Context, dt []DirectoriesTemplate) (s St
 	}
 
 	for _, d := range directories {
+		totalFiles += len(d.Files)
+	}
+
+	send := func(ctx context.Context, path, file, hostname string) {
+		go func(path, file string) {
+			defer wg.Done()
+			if err = c.sendFiles(ctx, path, file, hostname); err != nil {
+				resp <- response{
+					file: file,
+					path: path,
+					err:  err,
+				}
+			}
+			c.done <- true
+		}(path, file)
+	}
+
+	go func() {
+		for {
+			select {
+			case r := <-resp:
+				if r.err != nil {
+					c.Lock()
+					if _, ok = c.retry[r.file]; ok {
+						wg.Add(1)
+						if c.retry[r.file] < c.maxRetry {
+							send(ctx, r.path, r.file, hostname)
+						}
+					} else {
+						wg.Add(1)
+						c.retry[r.file] = 1
+						send(ctx, r.path, r.file, hostname)
+					}
+					c.Unlock()
+				}
+			}
+		}
+	}()
+
+	wg.Add(totalFiles)
+	for i := 0; i < c.concurrency; i++ {
+		c.cc <- struct{}{}
+	}
+
+	go func() {
+		for i := 0; i < totalFiles; i++ {
+			<-c.done
+			c.cc <- struct{}{}
+		}
+	}()
+
+	for _, d := range directories {
 		for _, f := range d.Files {
-			fmt.Println(c.sendFiles(ctx, d.Path, f.Name, hostname))
+			<-c.cc
+			send(ctx, d.Path, f.Name, hostname)
+			//fmt.Println(c.sendFiles(ctx, d.Path, f.Name, hostname))
 		}
 	}
+	wg.Wait()
 
 	return
 }

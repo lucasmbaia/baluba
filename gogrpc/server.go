@@ -29,9 +29,9 @@ type ServerGRPC struct {
 type Host struct {
 	sync.RWMutex
 
-	stream	map[string]baluba.BalubaService_UploadServer
-	files	map[string]*files
-	infos	chan *Chunk
+	stream	  map[string]baluba.BalubaService_UploadServer
+	files	  map[string]*files
+	infos	  chan *Chunk
 }
 
 type Chunk struct {
@@ -40,8 +40,10 @@ type Chunk struct {
 }
 
 type response struct {
-	stream	baluba.BalubaService_UploadServer
+	//stream	baluba.BalubaService_UploadServer
 	file	string
+	path	string
+	err	error
 }
 
 type files struct {
@@ -142,14 +144,14 @@ func (s *ServerGRPC) Create(ctx context.Context, bfiles *baluba.Files) (status *
 
 	s.Lock()
 	s.hosts[hostname] = &Host{
-		files:	make(map[string]*files),
-		infos:	make(chan *Chunk),
-		stream:	make(map[string]baluba.BalubaService_UploadServer),
+		files:	  make(map[string]*files),
+		infos:	  make(chan *Chunk),
+		stream:	  make(map[string]baluba.BalubaService_UploadServer),
 	}
 	s.Unlock()
 
 	for _, f := range (*bfiles).File {
-		fpath = fmt.Sprintf("%s/%s/%s", s.rootPath, hostname, f.Directory)
+		fpath = fmt.Sprintf("%s/%s%s", s.rootPath, hostname, f.Directory)
 		if _, err = os.Stat(fpath); os.IsNotExist(err) {
 			if err = os.MkdirAll(fpath, os.ModePerm); err != nil {
 				return
@@ -243,9 +245,9 @@ func (s *ServerGRPC) Upload(stream baluba.BalubaService_UploadServer) (err error
 		}
 		s.Unlock()
 
-		SEND(stream, &baluba.UploadStatus{
+		/*SEND(stream, &baluba.UploadStatus{
 			Code: baluba.UploadStatusCode_Ok,
-		})
+		})*/
 
 	}
 
@@ -256,10 +258,20 @@ func (h *Host) transfer(chunk chan *Chunk) {
 	for {
 		select {
 		case c := <-chunk:
-			var ffile = fmt.Sprintf("%s/%s/%s/%s", rootPath, c.chunk.Hostname, c.chunk.Directory, c.chunk.Name)
+			var ffile = fmt.Sprintf("%s/%s%s/%s", rootPath, c.chunk.Hostname, c.chunk.Directory, c.chunk.Name)
+			var err error
 
 			h.Lock()
-			h.files[ffile].f.Write(c.chunk.Content)
+			if _, err = h.files[ffile].f.Write(c.chunk.Content); err != nil {
+				fmt.Println(err)
+				c.stream.Send(&baluba.UploadStatus{
+					Code: baluba.UploadStatusCode_Failed,
+					Message:  err.Error(),
+				})
+
+				h.files[ffile].f.Close()
+				delete(h.files, c.chunk.Name)
+			}
 			h.files[ffile].writer += int64(len(c.chunk.Content))
 
 			if h.files[ffile].writer == h.files[ffile].size {
