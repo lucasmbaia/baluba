@@ -12,6 +12,7 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
 	_ "google.golang.org/grpc/encoding/gzip"
 )
@@ -77,6 +78,10 @@ func (c *ClientGRPC) Upload(ctx context.Context, directories *[]Directories) (St
 		totalFiles += len(d.Files)
 	}
 
+	ctx = metadata.NewOutgoingContext(ctx, metadata.New(map[string]string{
+		"hostname": "lucas",
+	}))
+
 	wg.Add(totalFiles)
 	for _, d := range *directories {
 		for _, f := range d.Files {
@@ -131,8 +136,8 @@ func (c *ClientGRPC) Upload(ctx context.Context, directories *[]Directories) (St
 					}
 
 					if err = stream.Send(&baluba.Chunk{
-						Action:	"transfer",
-						Hostname: hostname,
+						Action:	    "transfer",
+						Hostname:   hostname,
 						Directory:  path,
 						Name:	    f,
 						Content:    buf[:n],

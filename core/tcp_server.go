@@ -99,7 +99,7 @@ func (c *connection) handleConnection() {
 
 	var (
 		err    error
-		buffer = make([]byte, 65536)
+		buffer = make([]byte, 32768)
 		client	= serializer.NewClientSerializer()
 		n      int
 		//total  int64

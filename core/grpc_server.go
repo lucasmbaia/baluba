@@ -8,6 +8,7 @@ import (
 	"sync"
 	"os"
 
+	"google.golang.org/grpc/metadata"
 	"github.com/lucasmbaia/baluba/proto"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
@@ -21,6 +22,7 @@ type ServerGRPC struct {
 	files	  map[string]*files
 	response  chan response
 	rootPath  string
+	//hosts	  map[string]Host
 }
 
 type response struct {
@@ -54,6 +56,7 @@ func NewServerGRPC(cfg ServerGRPCConfig) (s ServerGRPC, err error) {
 	s.port = cfg.Port
 	s.files = make(map[string]*files)
 	s.response = make(chan response)
+	//s.hosts = make(map[string]Host)
 	s.rootPath = cfg.RootPath
 
 	return s, nil
@@ -87,6 +90,10 @@ func (s *ServerGRPC) Upload(stream baluba.BalubaService_UploadServer) error {
 		//done  = make(chan struct{})
 	)
 
+	if md, ok := metadata.FromIncomingContext(stream.Context()); ok {
+		fmt.Println(md)
+	}
+	//fmt.Println(stream.Context())
 	//s.files["teste"] = make(chan []byte)
 
 	//go s.write(done, s.files["teste"])
@@ -189,7 +196,6 @@ func (s *ServerGRPC) createFile(chunk *baluba.Chunk, stream baluba.BalubaService
 	if file, err = os.Create(fmt.Sprintf("%s/%s", fullPath, chunk.Name)); err != nil {
 		return err
 	}
-
 
 	s.Lock()
 	s.files[chunk.Name] = &files{

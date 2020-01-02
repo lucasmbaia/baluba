@@ -283,7 +283,7 @@ func UploadFile(name string) error {
 	if conn, err = net.DialTCP("tcp", nil, tcpAddr); err != nil {
 		return err
 	}*/
-	if conn, err = net.Dial("tcp", "172.16.95.171:5522"); err != nil {
+	if conn, err = net.Dial("tcp", "localhost:5522"); err != nil {
 		return err
 	}
 

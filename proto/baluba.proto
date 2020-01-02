@@ -12,6 +12,10 @@ message Chunk {
   string action = 7;
 }
 
+message Files {
+  repeated Chunk file = 1;
+}
+
 enum UploadStatusCode {
   Unknown = 0;
   Ok = 1;
@@ -26,4 +30,5 @@ message UploadStatus {
 
 service BalubaService {
   rpc Upload(stream Chunk) returns (stream UploadStatus) {}
+  rpc Create(Files) returns (UploadStatus) {}
 }
