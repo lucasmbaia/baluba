@@ -1,2 +1,0 @@
-hostname	name	occurred
-SCVNAPPD8217.bkp.cloudtotvs.com.br\\PROTHEUS	Mssql	2019-12-11 18:16:57.000000

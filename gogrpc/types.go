@@ -15,12 +15,12 @@ const (
 type DirectoriesTemplate Directories
 
 type Directories struct {
-	Path  string
-	Files []Files
+	Path  string	`json:",omitempty"`
+	Files []Files	`json:",omitempty"`
 }
 
 type Files struct {
-	Name  string
+	Name  string  `json:",omitempty"`
 }
 
 type Response struct {

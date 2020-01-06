@@ -40,7 +40,6 @@ type Chunk struct {
 }
 
 type response struct {
-	//stream	baluba.BalubaService_UploadServer
 	file	string
 	path	string
 	err	error
@@ -53,6 +52,7 @@ type files struct {
 	f	*os.File
 	done	chan struct{}
 	stream	baluba.BalubaService_UploadServer
+	hash	string
 }
 
 type ServerGRPCConfig struct {
@@ -168,6 +168,7 @@ func (s *ServerGRPC) Create(ctx context.Context, bfiles *baluba.Files) (status *
 			size:	f.Size,
 			f:	file,
 			writer:	0,
+			hash:	f.Hash,
 		}
 		s.Unlock()
 	}
@@ -216,7 +217,6 @@ func (s *ServerGRPC) Upload(stream baluba.BalubaService_UploadServer) (err error
 
 	s.Lock()
 	if _, ok = s.hosts[hostname]; ok {
-		//s.hosts[hostname].stream = stream
 		go s.hosts[hostname].transfer(s.hosts[hostname].infos)
 	}
 	s.Unlock()
@@ -237,18 +237,12 @@ func (s *ServerGRPC) Upload(stream baluba.BalubaService_UploadServer) (err error
 			return
 		}
 
-		//channel pelo stream
 		s.Lock()
 		s.hosts[chunk.Hostname].infos <- &Chunk{
-			chunk:	chunk,
+			chunk:	  chunk,
 			stream:	  stream,
 		}
 		s.Unlock()
-
-		/*SEND(stream, &baluba.UploadStatus{
-			Code: baluba.UploadStatusCode_Ok,
-		})*/
-
 	}
 
 	return
@@ -258,14 +252,18 @@ func (h *Host) transfer(chunk chan *Chunk) {
 	for {
 		select {
 		case c := <-chunk:
-			var ffile = fmt.Sprintf("%s/%s%s/%s", rootPath, c.chunk.Hostname, c.chunk.Directory, c.chunk.Name)
-			var err error
+			var (
+				ffile string
+				err   error
+				hash  string
+			)
+
+			ffile = fmt.Sprintf("%s/%s%s/%s", rootPath, c.chunk.Hostname, c.chunk.Directory, c.chunk.Name)
 
 			h.Lock()
 			if _, err = h.files[ffile].f.Write(c.chunk.Content); err != nil {
-				fmt.Println(err)
 				c.stream.Send(&baluba.UploadStatus{
-					Code: baluba.UploadStatusCode_Failed,
+					Code:	  baluba.UploadStatusCode_Failed,
 					Message:  err.Error(),
 				})
 
@@ -277,10 +275,23 @@ func (h *Host) transfer(chunk chan *Chunk) {
 			if h.files[ffile].writer == h.files[ffile].size {
 				h.files[ffile].f.Close()
 
-				fmt.Println("fecha aqui")
-				c.stream.Send(&baluba.UploadStatus{
-					Code: baluba.UploadStatusCode_Ok,
-				})
+				if hash, err = CalcMD5(ffile); err != nil {
+					c.stream.Send(&baluba.UploadStatus{
+						Code:	  baluba.UploadStatusCode_Failed,
+						Message:  err.Error(),
+					})
+				}
+
+				if h.files[ffile].hash == hash {
+					c.stream.Send(&baluba.UploadStatus{
+						Code: baluba.UploadStatusCode_Ok,
+					})
+				} else {
+					c.stream.Send(&baluba.UploadStatus{
+						Code:	  baluba.UploadStatusCode_Failed,
+						Message:  "Hashs of files are different",
+					})
+				}
 
 				delete(h.files, c.chunk.Name)
 			}

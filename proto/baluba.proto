@@ -10,6 +10,7 @@ message Chunk {
   int64 size = 5;
   int32 version = 6;
   string action = 7;
+  string hash = 8;
 }
 
 message Files {

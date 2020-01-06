@@ -3,10 +3,9 @@ package gogrpc
 import (
 	"io"
 	"os"
-	//"strings"
-	//"path/filepath"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/lucasmbaia/baluba/proto"
 	"github.com/pkg/errors"
@@ -27,13 +26,13 @@ type ClientGRPC struct {
 	conn	    *grpc.ClientConn
 	client	    baluba.BalubaServiceClient
 	chunkSize   int
-	//files	    map[string]*files
 	concurrency int
 	retry	    map[string]int
 	maxRetry    int
 	wait	    chan bool
 	done	    chan bool
 	cc	    chan struct{}
+	lt	    int64
 }
 
 type ClientGRPCConfig struct {
@@ -91,13 +90,14 @@ func (c *ClientGRPC) Upload(ctx context.Context, dt []DirectoriesTemplate) (s St
 		wg	    sync.WaitGroup
 		totalFiles  = 0
 		ok	    bool
+		now	    = time.Now()
 	)
 
 	if hostname, err = os.Hostname(); err != nil {
 		return
 	}
 
-	if directories, err = ListFiles(dt); err != nil {
+	if directories, err = ListFiles(dt, true, 0); err != nil {
 		return
 	}
 
@@ -165,10 +165,11 @@ func (c *ClientGRPC) Upload(ctx context.Context, dt []DirectoriesTemplate) (s St
 		for _, f := range d.Files {
 			<-c.cc
 			send(ctx, d.Path, f.Name, hostname)
-			//fmt.Println(c.sendFiles(ctx, d.Path, f.Name, hostname))
 		}
 	}
 	wg.Wait()
+
+	c.lt = now.Unix()
 
 	return
 }
@@ -245,6 +246,7 @@ func (c *ClientGRPC) createFiles(ctx context.Context, directories []Directories)
 		files	    []*baluba.Chunk
 		fi	    os.FileInfo
 		status	    *baluba.UploadStatus
+		hash	    string
 	)
 
 	for _, d := range directories {
@@ -253,10 +255,15 @@ func (c *ClientGRPC) createFiles(ctx context.Context, directories []Directories)
 				continue
 			}
 
+			if hash, err = CalcMD5(fmt.Sprintf("%s/%s", d.Path, f.Name)); err != nil {
+				return
+			}
+
 			files = append(files, &baluba.Chunk{
 				Directory:  d.Path,
 				Name:	    f.Name,
 				Size:	    fi.Size(),
+				Hash:	    hash,
 			})
 		}
 	}

@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-func ListFiles(dt []DirectoriesTemplate) (directories []Directories, err error) {
+func ListFiles(dt []DirectoriesTemplate, full bool, lt int64) (directories []Directories, err error) {
 	checkDirectories := func(directories []Directories, path string) (int, bool) {
 		for idx, d := range directories {
 			if d.Path == path {
@@ -56,17 +56,38 @@ func ListFiles(dt []DirectoriesTemplate) (directories []Directories, err error) 
 
 				file = strings.Replace(path, fmt.Sprintf("%s/", d.Path), "", 1)
 				if len(strings.Split(file, "/")) == 1 && !info.IsDir() {
-					directories[idx].Files = append(directories[idx].Files, Files{Name: file})
+					if full {
+						directories[idx].Files = append(directories[idx].Files, Files{Name: file})
+					} else {
+						if info.ModTime().Unix() > lt {
+							directories[idx].Files = append(directories[idx].Files, Files{Name: file})
+						}
+					}
 				} else {
 					dir = strings.Split(path, "/")
 
 					if index, exists = checkDirectories(directories, strings.Join(dir[:len(dir) -1], "/")); exists {
-						directories[index].Files = append(directories[index].Files, Files{Name: dir[len(dir)-1]})
+						if full {
+							directories[index].Files = append(directories[index].Files, Files{Name: dir[len(dir)-1]})
+						} else {
+							if info.ModTime().Unix() > lt {
+								directories[index].Files = append(directories[index].Files, Files{Name: dir[len(dir)-1]})
+							}
+						}
 					} else {
-						directories = append(directories, Directories{
-							Path:   strings.Join(dir[:len(dir) -1], "/"),
-							Files:  []Files{{Name: dir[len(dir)-1]}},
-						})
+						if full {
+							directories = append(directories, Directories{
+								Path:   strings.Join(dir[:len(dir) -1], "/"),
+								Files:  []Files{{Name: dir[len(dir)-1]}},
+							})
+						} else {
+							if info.ModTime().Unix() > lt {
+								directories = append(directories, Directories{
+									Path:   strings.Join(dir[:len(dir) -1], "/"),
+									Files:  []Files{{Name: dir[len(dir)-1]}},
+								})
+							}
+						}
 					}
 				}
 
