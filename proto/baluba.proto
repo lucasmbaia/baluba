@@ -30,6 +30,7 @@ message UploadStatus {
 }
 
 service BalubaService {
-  rpc Upload(stream Chunk) returns (stream UploadStatus) {}
+  rpc UploadFile(stream Chunk) returns (stream UploadStatus) {}
+  rpc UploadDatabase(stream Chunk) returns (stream UploadStatus) {
   rpc Create(Files) returns (UploadStatus) {}
 }

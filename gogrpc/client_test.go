@@ -35,3 +35,28 @@ func Test_ClientGRPC(t *testing.T) {
 	}
 }
 
+func Test_UploadDatabases(t *testing.T) {
+	c, err := NewClientGRPC(ClientGRPCConfig{
+		Address:	"192.168.207.128:5522",
+		ChunkSize:	32768,
+		MaxConcurrency:	3000,
+		DatabaseConfig:	&DatabaseConfig{
+			Username: "root",
+			Password: "123456",
+			Host:     "127.0.0.1",
+			Port:     3306,
+			Timeout:  "30000ms",
+		},
+	})
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := c.UploadDatabases(context.Background()); err != nil {
+		t.Fatal(err)
+	} else {
+		defer c.Close()
+	}
+}
+

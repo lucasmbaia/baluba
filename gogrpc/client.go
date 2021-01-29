@@ -33,6 +33,8 @@ type ClientGRPC struct {
 	done	    chan bool
 	cc	    chan struct{}
 	lt	    int64
+	hostname    string
+	db	    Database
 }
 
 type ClientGRPCConfig struct {
@@ -41,6 +43,7 @@ type ClientGRPCConfig struct {
 	Compress	bool
 	MaxConcurrency	int
 	MaxRetry	int
+	DatabaseConfig	*DatabaseConfig
 }
 
 func NewClientGRPC(cfg ClientGRPCConfig) (ClientGRPC, error) {
@@ -79,7 +82,37 @@ func NewClientGRPC(cfg ClientGRPCConfig) (ClientGRPC, error) {
 		client.cc = make(chan struct{}, defaultMaxConcurrency)
 	}
 
+	if cfg.DatabaseConfig != nil {
+		if client.db, err = Open("mysql", *cfg.DatabaseConfig); err != nil {
+			return client, err
+		}
+	}
+
+	if client.hostname, err = os.Hostname(); err != nil {
+		return client, err
+	}
+
 	return client, nil
+}
+
+func (c *ClientGRPC) UploadDatabases(ctx context.Context) (s Stats, err error) {
+	var (
+		databases   []string
+	)
+
+	if databases, err = c.db.ListMysqlDatabases(); err != nil {
+		return
+	}
+
+	ctx = metadata.NewOutgoingContext(ctx, metadata.New(map[string]string{
+		"hostname": c.hostname,
+	}))
+
+	if err = c.createDatabases(ctx, databases); err != nil {
+		return
+	}
+
+	return
 }
 
 func (c *ClientGRPC) Upload(ctx context.Context, dt []DirectoriesTemplate) (s Stats, err error) {
@@ -266,6 +299,99 @@ func (c *ClientGRPC) createFiles(ctx context.Context, directories []Directories)
 				Hash:	    hash,
 			})
 		}
+	}
+
+	if status, err = c.client.Create(ctx, &baluba.Files{
+		File: files,
+	}); err != nil {
+		return
+	}
+
+	if status.Code == baluba.UploadStatusCode_Unknown || status.Code == baluba.UploadStatusCode_Failed {
+		if status.Message == "" {
+			err = errors.New("Unknow error to create files")
+		} else {
+			err = errors.New(status.Message)
+		}
+	}
+
+	return
+}
+
+func (c *ClientGRPC) sendDatabases(ctx context.Context, path, database string) (err error) {
+	var (
+		stream	baluba.BalubaService_UploadClient
+		status	*baluba.UploadStatus
+		errc	= make(chan error, 1)
+		buffer	= make(chan []byte)
+		fname	= fmt.Sprintf("%s.sql", database)
+		done	= make(chan struct{})
+	)
+
+	if stream, err = c.client.Upload(ctx); err != nil {
+		return
+	}
+
+	go func() {
+		if status, err = stream.Recv(); err != nil {
+			errc <- err
+			return
+		}
+
+		if status.Code != baluba.UploadStatusCode_Ok {
+			errc <- errors.New(status.Message)
+			return
+		}
+
+		done <- struct{}{}
+		return
+	}()
+
+	go func() {
+		if err = c.db.DumpMysqlDatabase(ctx, database, buffer); err != nil {
+			errc <- err
+			return
+		}
+
+		done <- struct{}{}
+	}()
+
+	go func() {
+		for {
+			select {
+			case b := <-buffer:
+				if err = stream.Send(&baluba.Chunk{
+					Directory:  path,
+					Name:	    fname,
+					Hostname:   c.hostname,
+					Content:    b,
+				}); err != nil {
+					errc <- err
+					return
+				}
+			}
+		}
+	}()
+
+	select {
+	case err = <-errc:
+		return
+	case <-done:
+		return
+	}
+}
+
+func (c *ClientGRPC) createDatabases(ctx context.Context, databases []string) (err error) {
+	var (
+		files	    []*baluba.Chunk
+		status	    *baluba.UploadStatus
+	)
+
+	for _, d := range databases {
+		files = append(files, &baluba.Chunk{
+			Directory:  "/mysql_dump",
+			Name:	    fmt.Sprintf("%s.sql", d),
+		})
 	}
 
 	if status, err = c.client.Create(ctx, &baluba.Files{

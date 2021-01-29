@@ -28,6 +28,11 @@ type DatabaseConfig struct {
 	Timeout	  string
 }
 
+type Databases struct {
+	Name	    string
+	CheckSum    string
+}
+
 func Open(driver string, cfg DatabaseConfig) (d Database, err error) {
 	switch driver {
 	case "mysql":
